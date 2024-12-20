@@ -1,6 +1,6 @@
 ##-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-##
 ##          This code has been cleaned after the study was finalized       ##
-## If you notice errors in the code, contact Pyry Toivonen (pntoiv@utu.fi) ##
+## If you notice errors in the code, contact Pyry Toivonen                 ##
 ##        NOTE: code includes heavy analyses that take processing time     ##
 ##-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-##
 
@@ -9,6 +9,7 @@
 ## 2 Hop event classification        -#
 ## 3 Creating variables              -#
 ## 4 Modelling (GAM)                 -#
+## 5 Plotting                        -#
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 
 ## With the data given in the repository, chapters 2 and 3 can be skipped
@@ -25,6 +26,7 @@ library(tidyverse)
 library(sf)
 library(terra)
 library(tidyterra)
+library(amt)
 
 setwd("//utuhome.utu.fi/pntoiv/CoastRacc/Submission/DataRepository") # Make sure to change this to your working directory
 
@@ -71,6 +73,8 @@ for (i in unique(RaccData$ID)) {
 
 
 TrackDF <- do.call(rbind, TrackList)
+
+
 
 TrackDF %>%
   filter(SaarID == 0) %>% # locations in water
@@ -193,29 +197,27 @@ Saaret_AOI$SaarArea <- st_area(Saaret_AOI)
 
 ModelData <- ModelData %>%
   left_join(st_drop_geometry(Saaret_AOI)
-            %>% rename(IslandBefore = ID, AreaBefore = SaarArea), join_by(IslandBefore)) %>%
+            %>% rename(IslandBefore = SaarID, AreaBefore = SaarArea), join_by(IslandBefore)) %>%
   left_join(st_drop_geometry(Saaret_AOI)
-            %>% rename(IslandAfter = ID, AreaAfter = SaarArea), join_by(IslandAfter))
+            %>% rename(IslandAfter = SaarID, AreaAfter = SaarArea), join_by(IslandAfter))
 
 
 Distances <- rep(NA, nrow(ModelData))
 
 for (i in 1:nrow(ModelData)) {
   if (ModelData$IslandBefore[i] != 0) {
-    Distances[i] <- st_distance(filter(Saaret_AOI, ID == ModelData$IslandBefore[i]), filter(Saaret_AOI, ID == ModelData$IslandAfter[i]))
+    Distances[i] <- st_distance(filter(Saaret_AOI, SaarID == ModelData$IslandBefore[i]), filter(Saaret_AOI, SaarID == ModelData$IslandAfter[i]))
   }
 }
 
 ModelData$IslandDistance <- Distances
 
-ModelData %>%
-  filter(IslandDistance == 0)# 6 individuals with above mentioned events. These might need to to be removed for scewing data
 
 ModelData %>% 
   group_by(ID) %>%
   count() 
 
-length(unique(ModelData$ID)) # Total 24 individuals with island hops (1054 events)
+length(unique(ModelData$ID)) # Total 25 individuals with island hops (1034 events)
 
 hist(ModelData$IslandDistance)
 
@@ -526,16 +528,19 @@ ModData.G <- ModelData2 %>%
 #### 4 Modelling (GAM) ####
 ##-#-#-#-#-#-#-#-#-#-#-#-##
 
-
-library(gamlss)
+library(mgcv)
+library(gratia)
+library(patchwork)
 library(tidyverse)
 library(ggeffects)
 
 ModData.G <- read.csv("ModelData.csv") %>%
   mutate(Judas = as.factor(Judas),
          EventMonth = as.factor(EventMonth),
+         EventMonth_n = as.numeric(as.character(EventMonth)),
          Sex = as.factor(Sex),
          ID = as.factor(ID),
+         Ice = as.factor(Ice),
          IslandBefore = as.factor(IslandBefore),
          IslandAfter = as.factor(IslandAfter)) %>%
   mutate(Islands_within = Islands_within - 2) %>%
@@ -548,44 +553,200 @@ ModData.G <- read.csv("ModelData.csv") %>%
          SteppingStoneDensity = SteppingStones/LeastCostKM) 
 
 
-# Removing too influential outliers
-ModData.G <- ModData.G %>% filter(!EventID %in% c("R23_53","R23_57","R23_39","R23_24","R23_58"))
-
 # Removing male from Bolax (R4) because it already has partner in the data set and move together
 ModData.G <- ModData.G %>% filter(!ID %in% c("R4"))
 
 ModData.G$Judas <- relevel(ModData.G$Judas, "Before")
+                                                                               
+ModMGCV <- gam(log(IslandDistance_km) ~
+                  IceCover +
+                  s(Islands_within, m=6, k=24) +
+                  s(SteppingStones) +
+                  #Sex + # Only 1 female had judas removal = multicollinearity with Sex and Judas
+                  Judas +
+                  s(EventMonth_n, by=Judas, bs="cc") +
+                  s(ID, bs="re"),
+                data = ModData.G,
+                family=gaussian())
+
+plot(hist(ModMGCV$residuals))
+qq.gam(ModMGCV)
+concurvity(ModMGCV, full=T)
+
+summary(ModMGCV)
+gam.check(ModMGCV)
+plot(ModMGCV)
+
+gratia::draw(ModMGCV)
 
 
-NullModel <- gamlss(log(IslandDistance_km) ~ 1,
-                    data = ModData.G,
-                    method = RS(),
-                    family=NO,
-                    control = gamlss.control(n.cyc = 500))
+##-#-#-#-#-#-#-#-#-#-##
+####  5 Plotting   ####
+##-#-#-#-#-#-#-#-#-#-##
 
-summary(NullModel) # Deviance 1165.339 with RE, without RE 3283.639
+library(ggeffects)
+
+Pred1 <- predict_response(ModMGCV, terms="Islands_within [all]", 
+                          condition=c(Judas="After", 
+                                      SteppingStones = 1,
+                                      IceCover=0), 
+                          back_transform=T)
+
+plot(Pred1)
 
 
-GAMLSS_LOGNO_5 <- gamlss(log(IslandDistance_km) ~
-                           IceCover +
-                           pb(Islands_within) +
-                           pb(SteppingStones) +
-                           Sex + 
-                           log(AreaBefore_km2) +
-                           log(AreaAfter_km2) +
-                           Judas * EventMonth +
-                           random(IslandBefore) +
-                           random(IslandAfter),
-                         data = ModData.G,
-                         method = RS(),
-                         family=NO,
-                         control = gamlss.control(n.cyc = 500))
+p0.1 <- gratia::draw(ModMGCV, select="s(EventMonth_n):JudasBefore")
+p0.2 <- gratia::draw(ModMGCV, select="s(EventMonth_n):JudasAfter")
 
-term.plot(GAMLSS_LOGNO_5, partial.resid=F)
+PlotData1 <- p0.1[[1]][["data"]][,c(4,6,7,8)] %>%
+  mutate(PartnerRemoval = "Before")
+PlotData2 <- p0.2[[1]][["data"]][,c(4,6,7,8)] %>%
+  mutate(PartnerRemoval = "After")
 
-plot(GAMLSS_LOGNO_5)
-wp(GAMLSS_LOGNO_5, ylim.all=5)
+PlotData12 <- rbind(PlotData1, PlotData2)
 
-summary(GAMLSS_LOGNO_5) 
+# Log scale
+p1 <- ggplot(data=PlotData12, aes(x=EventMonth_n, y=.estimate, color=PartnerRemoval)) +
+  geom_ribbon(aes(ymin=.lower_ci, ymax=.upper_ci, fill=PartnerRemoval), alpha=0.15, color=NA) +
+  geom_line() +
+  scale_x_continuous(limits=c(1,12), breaks=seq(1,12, by=1)) +
+  scale_y_continuous(limits=c(-1.05,0.55), breaks=seq(-1,0.5, by=0.2)) +
+  labs(x="Month", y="Partial effect", color="Partner removal") +
+  theme_bw() +
+  scale_color_manual(values=c("deepskyblue4", "gray54")) +
+  scale_fill_manual(values=c("deepskyblue4","gray54"), guide="none") +
+  theme(
+    legend.position = c(0.9, .30),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+  )
 
-# Plotting and other extra code (different model runs etc.) have been removed from this code for simplicity
+partial_effects <- predict(ModMGCV, type="terms", se.fit=T)
+
+
+p2 <- ggplot() +
+  geom_ribbon(aes(ymin=partial_effects[["fit"]][,1] - 1.96*partial_effects[["se.fit"]][,1],
+                  ymax=partial_effects[["fit"]][,1] + 1.96*partial_effects[["se.fit"]][,1],
+                  x=ModData.G$IceCover), alpha=0.15) +
+  geom_line(aes(x=ModData.G$IceCover, y=partial_effects[["fit"]][,1]), linewidth=0.6) +
+  scale_y_continuous(limits=c(0,1), breaks=seq(0,1, by=0.1)) +
+  labs(x="Ice cover (%)", y="Partial effect") +
+  theme_bw()
+
+p3 <- ggplot(data=gratia::draw(ModMGCV, select="s(Islands_within)")[[1]][["data"]], aes(x=Islands_within, y=.estimate)) +
+  geom_ribbon(aes(ymin=.lower_ci, ymax=.upper_ci), alpha=0.15, color=NA) +
+  geom_line() + 
+  theme_bw() +
+  labs(x="Number of islands", y="Partial effect") +
+  scale_x_continuous(limits=c(0,270), breaks=seq(0,270, by=30))
+
+p4 <- ggplot(data=gratia::draw(ModMGCV, select="s(SteppingStones)")[[1]][["data"]], aes(x=SteppingStones, y=.estimate)) +
+  geom_ribbon(aes(ymin=.lower_ci, ymax=.upper_ci), alpha=0.15, color=NA) +
+  geom_line() + 
+  theme_bw() +
+  scale_y_continuous(limits=c(-1,2.5), breaks=seq(-1,2.5, by=0.5)) +
+  scale_x_continuous(limits=c(0,12), breaks=c(0,2,4,6,8,10,12)) +
+  labs(x="Number of stepping stones", y="Partial effect")
+
+(p3|p4)/(p1|p2) # 900 x 687
+
+
+## Some statistics ##
+Winter <- ModData.G %>% filter(EventMonth_n %in% c(1,2,3))
+
+Winter %>% group_by(Ice, EventMonth_n) %>% summarize(MeanDist = mean(IslandDistance_km),
+                                                     sd = sd(IslandDistance_km),
+                                                     se = sd(IslandDistance_km)/sqrt(n()),
+                                                     n =)
+
+ModData.G %>% filter(Ice == "Ice", EventMonth_n == 12)
+
+DF.1 <- ModData.G %>% mutate(EventDate = as.POSIXct(EventDate, format="%Y-%m-%d %H:%M:%S", tz="UTC")) %>% mutate(Year = year(EventDate))
+
+DF.2 <- DF.1 %>% group_by(ID, Year) %>% summarize(FirstMonth = min(EventMonth_n),
+                                          LastMonth = max(EventMonth_n)) %>%
+  ungroup() 
+
+DF.2 %>% count(Year)
+
+Summer <- ModData.G %>% filter(EventMonth_n %in% c(5,6,7))
+
+Summer %>% group_by(Judas, EventMonth_n) %>% summarize(MeanDist = mean(IslandDistance_km),
+                                                     sd = sd(IslandDistance_km),
+                                                     se = sd(IslandDistance_km)/sqrt(n()),
+                                                     n = n())
+
+
+
+
+## Response scale
+p1 <- ggplot(data=PlotData12, aes(x=EventMonth_n, y=exp(.estimate), color=PartnerRemoval)) +
+  geom_ribbon(aes(ymin=exp(.lower_ci), ymax=exp(.upper_ci), fill=PartnerRemoval), alpha=0.15, color=NA) +
+  geom_line() +
+  scale_x_continuous(limits=c(1,12), breaks=seq(1,12, by=1)) +
+  scale_y_continuous(limits=c(0.3,1.8), breaks=seq(0.4,1.8, by=0.2)) +
+  labs(x="Month", y="Partial effect", color="Partner removal") +
+  theme_classic() +
+  scale_color_manual(values=c("deepskyblue4", "gray54")) +
+  scale_fill_manual(values=c("deepskyblue4","gray54"), guide="none") +
+  theme(
+    legend.position = c(0.9, .30),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+  )
+
+partial_effects <- predict(ModMGCV2, type="terms", se.fit=T)
+
+
+p2 <- ggplot() +
+  geom_ribbon(aes(ymin=exp(partial_effects[["fit"]][,1] - 1.96*partial_effects[["se.fit"]][,1]),
+                  ymax=exp(partial_effects[["fit"]][,1] + 1.96*partial_effects[["se.fit"]][,1]),
+                  x=ModData.G$IceCover), alpha=0.15) +
+  geom_line(aes(x=ModData.G$IceCover, y=exp(partial_effects[["fit"]][,1])), linewidth=0.6) +
+  scale_y_continuous(limits=c(1,2.6), breaks=seq(1,2.5, by=0.25)) +
+  labs(x="Ice cover (%)", y="Partial effect") +
+  theme_classic()
+
+p3 <- ggplot(data=gratia::draw(ModMGCV2, select="s(Islands_within)")[[1]][["data"]], aes(x=Islands_within, y=exp(.estimate))) +
+  geom_ribbon(aes(ymin=exp(.lower_ci), ymax=exp(.upper_ci)), alpha=0.15, color=NA) +
+  geom_line() + 
+  theme_classic() +
+  labs(x="Number of islands", y="Partial effect") +
+  scale_x_continuous(limits=c(0,270), breaks=seq(0,270, by=30))
+
+p4 <- ggplot(data=gratia::draw(ModMGCV2, select="s(SteppingStones)")[[1]][["data"]], aes(x=SteppingStones, y=exp(.estimate))) +
+  geom_ribbon(aes(ymin=exp(.lower_ci), ymax=exp(.upper_ci)), alpha=0.15, color=NA) +
+  geom_line() + 
+  theme_classic() +
+  #scale_y_continuous(limits=c(-1,2.5), breaks=seq(-1,2.5, by=0.5)) +
+  scale_x_continuous(limits=c(0,12), breaks=c(0,2,4,6,8,10,12)) +
+  labs(x="Number of stepping stones", y="Partial effect")
+
+(p3|p4)/(p1|p2) # 900 x 687
+  
+
+
+mean((ModData.G$IslandDistance_km - exp(fitted(ModMGCV)))^2) # MSE - mean squared error
+sqrt(mean((ModData.G$IslandDistance_km- exp(fitted(ModMGCV)))^2)) # RMSE - root mean squared error
+
+library(Metrics)
+mae(ModData.G$IslandDistance_km , exp(fitted(ModMGCV))) # MAE - mean absolute error
+
+
+ggplot() +
+  geom_point(aes(x=exp(fitted(ModMGCV)), y=ModData.G$IslandDistance_km, color=ModData.G$IslandDistance_km-exp(fitted(ModMGCV))),
+             alpha=0.5) +
+  geom_abline()+
+  scale_color_gradient2(low="deepskyblue", high="deepskyblue", mid="gray20", midpoint=0, breaks=c(-2,-1,0,1,2)) +
+  theme_bw() +
+  labs(color="Error size (km)",
+       x="Fitted distances (km)",
+       y="Observed distances (km)") +
+  scale_x_continuous(limits=c(0,6.5), breaks=c(0,1,2,3,4,5,6)) +
+  scale_y_continuous(limits=c(0,6.5), breaks=c(0,1,2,3,4,5,6)) +
+  geom_text(aes(x=1, y=5), label="MSE: 0.19\nRMSE: 0.43\nMAE: 0.20", size = 3)
+
+# Save 833 x 549, PDF 7x4  
+             
