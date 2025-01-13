@@ -623,11 +623,6 @@ summary(getSmo(ModGAMLSS))
 gratia::draw(getSmo(ModGAMLSS))
 gratia::draw(ModMGCV)
 
-TE <- ModData.G %>% mutate(Res = residuals(ModGAMLSS, what="mu", type="simple"),
-                           Fit = fitted(ModGAMLSS))
-
-mean(TE$Res)
-
 # Checking heteroscedasticity of the new model
 plot(x=log(fitted(ModGAMLSS)), y=residuals(ModGAMLSS)) # Heteroscedasticity issue  is resolved
 plot(x=ModData.G$IceCover, y=residuals(ModGAMLSS))
@@ -673,6 +668,7 @@ PlotData2 <- p0.2[[1]][["data"]][,c(4,6,7,8)] %>%
   mutate(PartnerRemoval = "After")
 
 PlotData12 <- rbind(PlotData1, PlotData2)
+mean(ModData.G$EventMonth_n)
 
 # Log scale
 p1 <- ggplot(data=PlotData12, aes(x=EventMonth_n, y=.estimate, color=PartnerRemoval)) +
