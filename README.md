@@ -1,4 +1,4 @@
-This data repository is for a study by Toivonen, Pyry, Toivola, Mikko & Selonen, Vesa.
+This data repository is for a study by Toivonen, Pyry, Toivola, Mikko & Selonen, Vesa. Submitted to Ecological Solutions and Evidence.
 
 See also Movebank repository for GPS data: https://www.movebank.org/cms/webapp?gwt_fragment=page%3Dstudies%2Cpath%3Dstudy4656276921
 
