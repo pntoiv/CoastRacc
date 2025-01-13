@@ -1,6 +1,6 @@
 ##-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-##
 ##          This code has been cleaned after the study was finalized       ##
-## If you notice errors in the code, contact Pyry Toivonen                 ##
+##          If you notice errors in the code, contact Pyry Toivonen        ##
 ##        NOTE: code includes heavy analyses that take processing time     ##
 ##-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-##
 
