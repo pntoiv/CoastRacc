@@ -562,7 +562,7 @@ ModData.G$Judas <- relevel(ModData.G$Judas, "Before")
                                                                                
 ModMGCV <- gam(log(IslandDistance_km) ~
                   IceCover + Judas +
-                  s(Islands_within, m=6, k=24) +
+                  s(Islands_within, m=2, k=5) +
                   s(SteppingStones) +
                   #Sex + # Only 1 female had judas removal = multicollinearity with Sex and Judas
                   s(EventMonth_n, by=Judas, bs="cc") +
@@ -574,6 +574,7 @@ ModMGCV <- gam(log(IslandDistance_km) ~
 plot(hist(ModMGCV$residuals))
 qq.gam(ModMGCV)
 concurvity(ModMGCV, full=T)
+concurvity(ModMGCV, full=F)
 summary(ModMGCV)
 
 # Checking heteroscedasiticity of the model:
@@ -596,29 +597,34 @@ library(gamlss)
 library(gamlss.add)
 
 
+
 ModGAMLSS <- gamlss(IslandDistance_km ~
-                 IceCover + Judas +
-                 ga(~s(Islands_within, m=6, k=24) +
-                 s(SteppingStones) +
-                 #Sex + # Only 1 female had judas removal = multicollinearity with Sex and Judas
-                 s(EventMonth_n, by=Judas, bs="cc")) + random(ID),
-               sigma.fo = ~ pb(SteppingStones),
-               method=RS(),
-               control = gamlss.control(n.cyc=50),
-               data = ModData.G,
-               family=LOGNO2)
+                      IceCover + Judas +
+                      ga(~s(Islands_within, m=2, k=5) +
+                           s(SteppingStones) +
+                           #Sex + # Only 1 female had judas removal = multicollinearity with Sex and Judas
+                           s(EventMonth_n, by=Judas, bs="cc")) + random(ID),
+                    sigma.fo = ~ ga(~s(SteppingStones)),
+                    method=RS(),
+                    control = gamlss.control(n.cyc=50),
+                    data = ModData.G,
+                    family=LOGNO2)
 
 
 summary(ModMGCV)
 summary(ModGAMLSS)
 summary(getSmo(ModGAMLSS, what="mu"))
+summary(getSmo(ModGAMLSS, what="sigma"))
+concurvity(getSmo(ModGAMLSS, what="mu"), T)
 
 term.plot(ModGAMLSS, what="sigma")
 
 
 plot(ModGAMLSS)
 
-summary(getSmo(ModGAMLSS))
+test <- getSmo(ModGAMLSS, what="sigma")
+
+
 
 gratia::draw(getSmo(ModGAMLSS))
 gratia::draw(ModMGCV)
@@ -651,10 +657,6 @@ ggplot() +
 
 library(marginaleffects)
 
-plot_predictions(ModGAMLSS, condition = c("EventMonth_n","Judas"),
-                 type = 'response', what="mu")
-
-plot(Pred1)
 
 
 grid_col <- "gray95"
@@ -670,16 +672,16 @@ PlotData2 <- p0.2[[1]][["data"]][,c(4,6,7,8)] %>%
 PlotData12 <- rbind(PlotData1, PlotData2)
 mean(ModData.G$EventMonth_n)
 
-# Log scale
+# Partial effects
 p1 <- ggplot(data=PlotData12, aes(x=EventMonth_n, y=.estimate, color=PartnerRemoval)) +
   geom_ribbon(aes(ymin=.lower_ci, ymax=.upper_ci, fill=PartnerRemoval), alpha=0.15, color=NA) +
   geom_line() +
   scale_x_continuous(limits=c(1,12), breaks=seq(1,12, by=1)) +
   scale_y_continuous(limits=c(-1.05,0.55), breaks=seq(-1,0.5, by=0.2)) +
-  labs(x="Month", y="Partial effect", color="Partner removal") +
+  labs(x="Month", y="Partial effect", color="Partner removal", fill="Partner removal") +
   theme_bw() +
   scale_color_manual(values=c("deepskyblue4", "gray54")) +
-  scale_fill_manual(values=c("deepskyblue4","gray54"), guide="none") +
+  scale_fill_manual(values=c("deepskyblue4","gray54")) +
   theme(
     legend.position = c(0.9, .30),
     legend.justification = c("right", "top"),
@@ -708,11 +710,14 @@ p2 <- ggplot() +
         panel.grid.major.y = element_line(color=grid_col),
         panel.grid.minor.y = element_line(color=grid_col))
 
+
+
 p3 <- ggplot(data=gratia::draw(getSmo(ModGAMLSS), select="s(Islands_within)")[[1]][["data"]], aes(x=Islands_within, y=.estimate)) +
   geom_ribbon(aes(ymin=.lower_ci, ymax=.upper_ci), alpha=0.15, color=NA) +
   geom_line() + 
   theme_bw() +
   labs(x="Number of islands", y="Partial effect") +
+  scale_y_continuous(limits=c(-0.5,2.2), breaks=seq(-0.5,2, by=0.5)) +
   scale_x_continuous(limits=c(0,270), breaks=seq(0,270, by=30)) +
   theme(panel.grid.minor.x = element_blank(),
         panel.grid.major.x = element_blank(),
@@ -723,7 +728,7 @@ p4 <- ggplot(data=gratia::draw(getSmo(ModGAMLSS), select="s(SteppingStones)")[[1
   geom_ribbon(aes(ymin=.lower_ci, ymax=.upper_ci), alpha=0.15, color=NA) +
   geom_line() + 
   theme_bw() +
-  scale_y_continuous(limits=c(-1,2.5), breaks=seq(-1,2.5, by=0.5)) +
+  scale_y_continuous(limits=c(-1,2.2), breaks=seq(-1,2, by=0.5)) +
   scale_x_continuous(limits=c(0,12), breaks=c(0,2,4,6,8,10,12)) +
   labs(x="Number of stepping stones", y="Partial effect") +
   theme(panel.grid.minor.x = element_blank(),
@@ -731,6 +736,82 @@ p4 <- ggplot(data=gratia::draw(getSmo(ModGAMLSS), select="s(SteppingStones)")[[1
         panel.grid.major.y = element_line(color=grid_col),
         panel.grid.minor.y = element_line(color=grid_col))
 
+(p3|p4)/(p1|p2) # 900 x 687
+
+
+
+
+
+# Response
+
+p1 <- plot_predictions(ModGAMLSS, condition = list("EventMonth_n","Judas", IceCover=0),
+                 type = 'response', what="mu") +
+  scale_x_continuous(limits=c(1,12), breaks=seq(1,12, by=1)) +
+  #scale_y_continuous(limits=c(-1.05,0.55), breaks=seq(-1,0.5, by=0.2)) +
+  labs(x="Month", y="Hop distance (km)", fill="Partner removal", color="Partner removal") +
+  theme_bw() +
+  scale_color_manual(values=c("deepskyblue4", "gray54")) +
+  scale_fill_manual(values=c("deepskyblue4","gray54")) +
+  theme(
+    strip.text.x = element_blank(),
+    legend.position = c(0.9, .30),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(color=grid_col),
+    panel.grid.minor.y = element_line(color=grid_col)
+  )
+
+
+p2 <- plot_predictions(ModGAMLSS, condition = list("IceCover"),
+                 type = 'response', what="mu") +
+  scale_y_continuous(limits=c(0.1,0.22), breaks=seq(0.1,0.22, by=0.02)) +
+  labs(x="Ice cover (%)", y="Hop distance (km)") +
+  theme_bw() +
+  theme(legend.position = c(0.9, .30),
+        legend.justification = c("right", "top"),
+        legend.box.just = "right",
+        legend.margin = margin(6, 6, 6, 6),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color=grid_col),
+        panel.grid.minor.y = element_line(color=grid_col))
+
+
+p3 <- plot_predictions(ModGAMLSS, condition = list("Islands_within", IceCover = c(0,100)),
+                 type = 'response', what="mu") +
+  theme_bw() +
+  scale_x_continuous(limits=c(0,270), breaks=seq(0,270, by=30)) +
+  scale_color_manual(values=c("deepskyblue4", "gray54")) +
+  scale_fill_manual(values=c("deepskyblue4","gray54")) +
+  labs(x="Number of islands", y="Hop distance (km)", fill="Ice cover (%)", color="Ice cover (%)") +
+  theme(legend.position = c(0.9, .30),
+        legend.justification = c("right", "top"),
+        legend.box.just = "right",
+        legend.margin = margin(6, 6, 6, 6),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color=grid_col),
+        panel.grid.minor.y = element_line(color=grid_col))
+
+p4 <- plot_predictions(ModGAMLSS, condition = list("SteppingStones", IceCover = c(0,100)),
+                 type = 'response', what="mu") +
+  theme_bw() +
+  scale_x_continuous(limits=c(0,12), breaks=c(0,2,4,6,8,10,12)) +
+  scale_color_manual(values=c("deepskyblue4", "gray54")) +
+  scale_fill_manual(values=c("deepskyblue4","gray54")) +
+  labs(x="Number of stepping stones", y="Hop distance (km)", fill="Ice cover (%)", color="Ice cover (%)") +
+  theme(legend.position = c(0.9, .30),
+        legend.justification = c("right", "top"),
+        legend.box.just = "right",
+        legend.margin = margin(6, 6, 6, 6),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color=grid_col),
+        panel.grid.minor.y = element_line(color=grid_col))
+ 
 (p3|p4)/(p1|p2) # 900 x 687
 
 
@@ -779,7 +860,7 @@ ggplot() +
        y="Observed distances (km)") +
   scale_x_continuous(limits=c(0,6.5), breaks=c(0,1,2,3,4,5,6)) +
   scale_y_continuous(limits=c(0,6.5), breaks=c(0,1,2,3,4,5,6)) +
-  geom_text(aes(x=1, y=5), label="MSE: 0.15\nRMSE: 0.39\nMAE: 0.19", size = 3)
+  geom_text(aes(x=1, y=5), label="MSE: 0.16\nRMSE: 0.40\nMAE: 0.19", size = 3)
 
 # Save PDF 7x4  
 
