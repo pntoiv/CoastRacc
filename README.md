@@ -1,4 +1,4 @@
-This data repository is for a study by Toivonen, Pyry, Toivola, Mikko & Selonen, Vesa. Published in Ecological Solutions and Evidence.
+This data repository is for a study by Toivonen, Pyry, Toivola, Mikko & Selonen, Vesa published in Ecological Solutions and Evidence.
 
 Toivonen PN, Toivola M, Selonen V. (2025). Ice cover and partner removal increase movements of invasive mesopredator in the coastal island mosaic. Ecological Solutions and Evidence.
 
