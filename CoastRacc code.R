@@ -597,7 +597,6 @@ library(gamlss)
 library(gamlss.add)
 
 
-
 ModGAMLSS <- gamlss(IslandDistance_km ~
                       IceCover + Judas +
                       ga(~s(Islands_within, m=2, k=5) +
@@ -621,8 +620,6 @@ term.plot(ModGAMLSS, what="sigma")
 
 
 plot(ModGAMLSS)
-
-test <- getSmo(ModGAMLSS, what="sigma")
 
 
 
@@ -656,8 +653,6 @@ ggplot() +
 ##-#-#-#-#-#-#-#-#-#-##
 
 library(marginaleffects)
-
-
 
 grid_col <- "gray95"
 
